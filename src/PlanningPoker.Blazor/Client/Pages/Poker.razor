@@ -1,5 +1,6 @@
-﻿@page "/poker"
+﻿@page "/poker/{group}"
 @using Microsoft.AspNetCore.SignalR.Client
+@using System.Collections.Concurrent
 @inject NavigationManager NavigationManager
 @implements IAsyncDisposable
 
@@ -18,23 +19,56 @@
     </label>
 </div>
 <button @onclick="Send" disabled="@(!IsConnected)">Send</button>
+<button @onclick="Show" disabled="@(!IsConnected)">Show</button>
+<button @onclick="Reset" disabled="@(!IsConnected)">Reset</button>
 
 <hr>
 
+@myVote
+
+
 <ul id="messagesList">
-    @foreach (var message in messages)
+    @foreach (var kvp in votes.OrderBy(x => x.Key))
     {
-        <li>@message</li>
+        string item;
+
+        if (showResults)
+        {
+            item = $"{kvp.Key.Split("|").FirstOrDefault()}: {kvp.Value}";
+        }
+        else
+        {
+            item = $"{kvp.Key.Split("|").FirstOrDefault()} ✔";
+        }
+        <li>@item</li>
     }
 </ul>
 
 @code {
     private HubConnection? hubConnection;
-    private List<string> messages = new List<string>();
+    private ConcurrentDictionary<string, string> votes = new();
     private string? userInput;
     private string? messageInput;
+    private string? userIdSuffix;
+    private bool showResults = false;
+    private string myVote = string.Empty;
+
+    [Parameter]
+    public string Group { get; set; } = string.Empty;
 
     protected override async Task OnInitializedAsync()
+    {
+        await SetUserIdSuffix();
+        await ConnectToHub();
+    }
+
+    private async Task SetUserIdSuffix()
+    {
+        Random r = new Random();
+        userIdSuffix = r.Next(10000, 99999).ToString();
+    }
+
+    private async Task ConnectToHub()
     {
         hubConnection = new HubConnectionBuilder()
             .WithUrl(NavigationManager.ToAbsoluteUri("/pokerhub"))
@@ -42,24 +76,73 @@
 
         hubConnection.On<string, string>("ReceiveMessage", (user, message) =>
         {
-            var encodedMsg = $"{user}: {message}";
-            messages.Add(encodedMsg);
+            if(user.Equals($"{userInput}|{userIdSuffix}", StringComparison.CurrentCultureIgnoreCase))
+            {
+                myVote = $"My vote: {message}";
+                StateHasChanged();
+            }
+            votes.AddOrUpdate(key: user, addValue: message, updateValueFactory: (key, oldValue) => message);
+            StateHasChanged();
+        });
+
+        hubConnection.On("ShowResults", () =>
+        {
+            showResults = true;
+            StateHasChanged();
+        });
+
+        hubConnection.On("Reset", () =>
+        {
+            showResults = false;
+            myVote = string.Empty;
+            votes.Clear();
             StateHasChanged();
         });
 
         await hubConnection.StartAsync();
+
+        await hubConnection.SendAsync("AddToGroup", Group);
     }
+
 
     private async Task Send()
     {
         if (hubConnection is not null)
         {
-            await hubConnection.SendAsync("SendMessage", userInput, messageInput);
+            string userWithSuffix = $"{userInput}|{userIdSuffix}";
+            await hubConnection.SendAsync("SendMessage", userWithSuffix, messageInput, Group);
+        }
+    }
+
+    private async Task Show()
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.SendAsync("ShowResults", Group);
+        }
+    }
+
+    private async Task Reset()
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.SendAsync("Reset", Group);
         }
     }
 
     public bool IsConnected =>
         hubConnection?.State == HubConnectionState.Connected;
+
+    public override bool Equals(object obj)
+    {
+        return obj is Poker poker &&
+               Group == poker.Group;
+    }
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(Group);
+    }
 
     public async ValueTask DisposeAsync()
     {
