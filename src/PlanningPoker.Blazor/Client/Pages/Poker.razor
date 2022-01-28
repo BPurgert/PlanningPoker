@@ -12,19 +12,39 @@
         <input @bind="userInput" />
     </label>
 </div>
-<div class="form-group">
-    <label>
-        Vote:
-        <input @bind="messageInput" size="50" />
-    </label>
+
+<div class="container">
+    <div class="row">
+        <div class="col">
+            <SfCard ID="card3" @onclick='() => SendVote("3")'>
+                <CardFooter>
+                    <CardFooterContent>
+                        <div class=cardtopleft>3</div>
+                        <div class=cardcenter>#</div>
+                        <div class=cardbottomright>3</div>
+                    </CardFooterContent>
+                </CardFooter>
+            </SfCard>
+        </div>
+        <div class="col">
+            <SfCard ID="card5" @onclick='() => SendVote("5")'>
+                <CardContent>
+
+                </CardContent>
+            </SfCard>
+        </div>
+        <div class="col">
+            <SfCard ID="card8" @onclick='() => SendVote("8")'>
+                <CardHeader Title="8" />
+            </SfCard>
+        </div>
+    </div>
 </div>
-<button @onclick="Send" disabled="@(!IsConnected)">Send</button>
+
 <button @onclick="Show" disabled="@(!IsConnected)">Show</button>
 <button @onclick="Reset" disabled="@(!IsConnected)">Reset</button>
 
 <hr>
-
-@myVote
 
 
 <ul id="messagesList">
@@ -68,6 +88,15 @@
         userIdSuffix = r.Next(10000, 99999).ToString();
     }
 
+    private async void SendVote(string vote)
+    {
+        if (hubConnection is not null)
+        {
+            string userWithSuffix = $"{userInput}|{userIdSuffix}";
+            await hubConnection.SendAsync("SendMessage", userWithSuffix, vote, Group);
+        }
+    }
+
     private async Task ConnectToHub()
     {
         hubConnection = new HubConnectionBuilder()
@@ -76,7 +105,7 @@
 
         hubConnection.On<string, string>("ReceiveMessage", (user, message) =>
         {
-            if(user.Equals($"{userInput}|{userIdSuffix}", StringComparison.CurrentCultureIgnoreCase))
+            if (user.Equals($"{userInput}|{userIdSuffix}", StringComparison.CurrentCultureIgnoreCase))
             {
                 myVote = $"My vote: {message}";
                 StateHasChanged();
@@ -103,7 +132,6 @@
 
         await hubConnection.SendAsync("AddToGroup", Group);
     }
-
 
     private async Task Send()
     {
@@ -152,3 +180,27 @@
         }
     }
 }
+
+<style>
+.cardtopleft {
+  position: absolute;
+  top: 8px;
+  left: 16px;
+  font-size: 18px;
+}
+
+.cardbottomright {
+  position: absolute;
+  bottom: 8px;
+  right: 16px;
+  font-size: 18px;
+}
+
+.cardcenter {
+  position: absolute;
+  top: 50%;
+  width: 100%;
+  text-align: center;
+  font-size: 18px;
+}
+</style>
